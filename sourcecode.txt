@@ -1,0 +1,176 @@
+import sys
+import Adafruit_DHT
+import RPi.GPIO as IO # Import Raspberry Pi GPIO library
+from w1thermsensor import W1ThermSensor
+sensor = W1ThermSensor()
+from Adafruit_IO import Client, Feed
+import time
+from time import sleep
+import serial
+IO.setwarnings(False)
+IO.setmode(IO.BCM) 
+pump1=21
+pump2=20
+pump3=16
+trig=26
+echo=6
+trig1=13
+echo1=19
+soil=17
+soil1=27
+buzz=22
+pump=16
+
+ser = serial.Serial(
+port='/dev/ttyUSB0',
+baudrate = 9600,
+parity=serial.PARITY_NONE,
+stopbits=serial.STOPBITS_ONE,
+bytesize=serial.EIGHTBITS,
+timeout=1
+)
+ADAFRUIT_IO_KEY = 'aio_dkPC95B82CPQhKUokLUsLBy3YZ0X'
+ADAFRUIT_IO_USERNAME = 'Mahi_7013'
+aio = Client(ADAFRUIT_IO_USERNAME, ADAFRUIT_IO_KEY)
+ 
+
+phlevel_feed = aio.feeds('ph')
+humidity_feed = aio.feeds('humidity')
+watertemp_feed=aio.feeds('fishtanktemp')
+waterleak_feed=aio.feeds('waterleakage')
+temp_feed=aio.feeds('temparature')
+waterlevel_feed=aio.feeds('aquawaterlevel')
+moisture_feed=aio.feeds('soilmoisture')
+
+IO.setup(soil,IO.IN,pull_up_down=IO.PUD_UP)
+IO.setup(soil1,IO.IN,pull_up_down=IO.PUD_UP)
+IO.setup(pump1, IO.OUT, initial=IO.LOW) # Set pin 40 to be an output pin
+IO.setup(trig,IO.OUT)
+IO.setup(echo,IO.IN)
+IO.setup(trig1,IO.OUT)
+IO.setup(echo1,IO.IN)
+IO.setup(buzz,IO.OUT)
+IO.setup(buzz,IO.LOW)
+IO.setup(pump2, IO.OUT, initial=IO.LOW) # Set pin 38 to be an output pin
+IO.setup(pump3, IO.OUT, initial=IO.LOW) # Set pin 38 to be an output pin
+
+while True:
+    humidity, temperature1 = Adafruit_DHT.read_retry(11, 12)
+    sleep(1)
+    tem=str(temperature1)
+    hum=str(humidity)
+    print("temperature"  ,temperature1)
+    print("humidity"  ,humidity)
+    aio.send(temp_feed.key, str(temperature1))
+    aio.send(humidity_feed.key, str(humidity))
+
+    if IO.input(soil)==IO.HIGH:
+        print("soil is dry")
+    elif IO.input(soil)==IO.LOW:
+        print("soil is wet")
+
+    if IO.input(soil)==IO.LOW or temperature1<26 or humidity>80:
+        IO.output(pump2,IO.HIGH)
+        print("pump2 on")
+    elif IO.input(soil)==IO.HIGH or temperature1>30 or humidity<90:
+       IO.output(pump2,IO.LOW)
+       print("pump2 off")
+    if IO.input(soil1)==IO.HIGH:
+        
+        print("soil1 is dry")
+        
+    elif IO.input(soil1)==IO.LOW:
+       
+       
+       print("soil1 is wet")
+       print("water leakage happening")
+    aio.send(moisture_feed.key, str(soil))
+    aio.send(waterleak_feed.key, str(soil1))
+    temperature = sensor.get_temperature()
+    print("The temperature is %s celsius" % temperature)
+    time.sleep(1)
+    aio.send(watertemp_feed.key, str(temperature))
+    pulse_end=0
+    count=0
+    IO.output(trig,False)
+    time.sleep(0.2)
+    IO.output(trig,True)
+    time.sleep(0.00001)
+    IO.output(trig,False)
+    while IO.input(echo)==0:
+        pulse_start=time.time()
+        count=count+1
+        if count>1000:
+            count=0
+            break
+    count=0
+    while IO.input(echo)==1:
+        pulse_end=time.time()
+        count=count+1
+        if count>1000:
+            count=0
+            break
+    count=0
+    pulse_duration=pulse_end - pulse_start
+    distance=pulse_duration*17150
+    distance=round(distance,2)
+    level=distance-0.5
+    watel=float(level)
+    print("Distance:",watel,"cm")
+    aio.send(waterlevel_feed.key,str(watel))
+   
+    sleep(2)
+    received_data=ser.read()
+    time.sleep(0.03)
+    data_left=ser.inWaiting()
+    received_data+=ser.read(data_left)
+    #print(received_data[2:10])
+    ph=received_data[5:10]
+    print("PH:")
+    print(ph)
+    acid=float(ph)
+    aio.send(phlevel_feed.key,str(acid))
+    time.sleep(3)
+    if acid>10:
+        IO.output(pump1,IO.HIGH)
+        print("pump1 on")
+    if watel<3:
+        IO.output(pump1,IO.LOW)
+        print("pump1 off")
+    IO.output(trig1,False)
+    time.sleep(0.2)
+    IO.output(trig1,True)
+    time.sleep(0.00001)
+    IO.output(trig1,False)
+    while IO.input(echo1)==0:
+        pulse_start=time.time()
+        count=count+1
+        if count>1000:
+            count=0
+            break
+    count=0
+    while IO.input(echo1)==1:
+        pulse_end=time.time()
+        count=count+1
+        if count>1000:
+            count=0
+            break
+   
+    pulse_duration1=pulse_end - pulse_start
+    distance1=pulse_duration1*17150
+    distance1=round(distance1,2)
+    level1=distance1-0.5
+    watel1=float(level1)
+   
+    print("Distance1:",watel1,"cm")
+
+    if watel1>3.0:
+        IO.output(pump3,IO.HIGH)
+        print("pump3 on")
+        
+    else:
+        IO.output(pump3,IO.LOW)
+        print("pump3 off")
+    
+
+
